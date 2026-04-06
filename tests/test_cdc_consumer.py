@@ -3,21 +3,24 @@ Unit tests for CDC consumer logic.
 Run: pytest tests/ -v
 """
 
-from kafka.structs import ConsumerRecord
+from dataclasses import dataclass
+from typing import Any
 
 
 OP_MAP = {"c": "INSERT", "u": "UPDATE", "d": "DELETE", "r": "SNAPSHOT"}
 
 
-def make_record(topic: str, payload: dict) -> ConsumerRecord:
-    return ConsumerRecord(
-        topic=topic, partition=0, offset=0,
-        timestamp=1704067200000, timestamp_type=0,
-        key=None, value=payload,
-        headers=[], checksum=None,
-        serialized_key_size=-1, serialized_value_size=100,
-        serialized_header_size=-1,
-    )
+@dataclass
+class FakeRecord:
+    """Lightweight stand-in for kafka.ConsumerRecord — avoids version-specific imports."""
+    topic: str
+    value: Any
+    partition: int = 0
+    offset: int = 0
+
+
+def make_record(topic: str, payload) -> FakeRecord:
+    return FakeRecord(topic=topic, value=payload)
 
 
 class TestOpMapping:
@@ -52,14 +55,13 @@ class TestPayloadParsing:
 
     def test_none_payload_skipped(self):
         record = make_record("cdc.public.claims", None)
-        # Consumer should skip None payloads without error
         assert record.value is None
 
     def test_batch_groups_by_table(self):
         records = [
-            make_record("cdc.public.claims",    {"claim_id": "C001", "__op": "c"}),
-            make_record("cdc.public.members",   {"member_id": "M001", "__op": "c"}),
-            make_record("cdc.public.claims",    {"claim_id": "C002", "__op": "u"}),
+            make_record("cdc.public.claims",  {"claim_id": "C001", "__op": "c"}),
+            make_record("cdc.public.members", {"member_id": "M001", "__op": "c"}),
+            make_record("cdc.public.claims",  {"claim_id": "C002", "__op": "u"}),
         ]
         tables = {}
         for msg in records:
